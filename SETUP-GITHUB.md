@@ -24,6 +24,8 @@ Repo → **Settings → Secrets and variables → Actions → New repository sec
 | `ANTHROPIC_API_KEY`, `FINNHUB_API_KEY` | Optional: AI review, earnings dates. |
 | `NTFY_TOPIC` | Optional: phone alerts. Use a long random name. |
 
+**Easier:** skip typing these into GitHub. Once the app is running, Settings → *Connect accounts* encrypts your keys on the phone and saves them as GitHub Secrets for you (it needs the token permissions in step 5).
+
 Non-secret settings (such as `OKX_DEMO=true` or `MAX_LIVE_TRADE_DOLLARS=25`) go under the **Variables** tab with the same names. `OKX_DEMO` defaults to true.
 
 ## 3. Start the runner
@@ -35,7 +37,7 @@ Non-secret settings (such as `OKX_DEMO=true` or `MAX_LIVE_TRADE_DOLLARS=25`) go 
 ## 5. Make a GitHub token for the app
 GitHub → Settings → Developer settings → **Fine-grained tokens** → Generate:
 * Repository access: **only this repo**
-* Permissions: **Contents: Read and write**, **Actions: Read and write**
+* Permissions: **Contents: Read and write**, **Actions: Read and write**, **Secrets: Read and write**, **Variables: Read and write** (the last two let the app save your broker keys for you)
 
 Open the website, paste the token and your passphrase. Both stay on that device.
 

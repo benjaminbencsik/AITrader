@@ -14,7 +14,7 @@ function build({ out, repo, root = path.join(__dirname, '..', 'public') }) {
   const idx = path.join(out, 'index.html');
   let html = fs.readFileSync(idx, 'utf8');
   if (!html.includes('./app.js')) throw new Error('index.html does not load ./app.js');
-  html = html.replace('<script src="./app.js"></script>', '<script src="./shared.js"></script>\n<script src="./config.js"></script>\n<script src="./github.js"></script>\n<script src="./app.js"></script>');
+  html = html.replace('<script src="./app.js"></script>', '<script src="./shared.js"></script>\n<script src="./sealedbox.js"></script>\n<script src="./config.js"></script>\n<script src="./github.js"></script>\n<script src="./app.js"></script>');
   fs.writeFileSync(idx, html);
   return out;
 }

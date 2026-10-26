@@ -463,7 +463,7 @@ function settingsView() {
   });
 
   const root = h('div', {});
-  root.append(smartCard, autoCard, stratCard, stockCard, cryptoCard);
+  root.append(accountsCard(), smartCard, autoCard, stratCard, stockCard, cryptoCard);
   // ---- AI watchlist ideas ----
   const ideaBox = h('div', {});
   const drawIdeas = () => ideaBox.replaceChildren(...(ideas ? ideas.map((i) => h('div', { class: 'idea' }, h('div', {}, h('b', {}, i.symbol), ' ', i.price ? money(i.price) : '', ' ', h('span', { class: 'muted' }, i.ok ? '' : '(no usable data or too cheap)')), h('div', { class: 'muted', style: 'font-size:12px' }, i.reason), i.ok ? h('button', { class: 'sec', onclick: () => act(() => api('/api/settings', { method: 'POST', body: viewCls() === 'crypto' ? { cryptoWatchlist: st.cryptoWatchlist.concat(i.symbol) } : { watchlist: st.watchlist.concat(i.symbol) } })) }, 'Add to watchlist') : null)) : []));
@@ -482,6 +482,58 @@ function settingsView() {
   root.append(h('div', { class: 'card muted', style: 'margin-top:10px;font-size:12px' }, (GH() ? 'Runner checks: ' : 'Server checks: ') + 'phone alerts ' + (state.notificationsOn ? 'on' : 'off') + ' · uptime ping ' + (state.healthcheckOn ? 'on' : 'off (set HEALTHCHECK_URL; /healthz is the endpoint to monitor)') + ' · earnings feed ' + (state.earningsAvailable ? 'on' : 'off') + ' · news ' + (state.newsAvailable ? 'on' : 'off') + ' · data ' + state.dataProvider));
   root.append(h('div', { class: 'savebar' }, h('button', { class: 'block', disabled: busy, onclick: save }, 'Save changes')));
   return root;
+}
+
+// Which keys each broker needs, as the names the runner reads. `demo` is a plain setting (not secret).
+const KEY_FIELDS = {
+  okx: { label: 'OKX', cls: 'crypto', demo: 'OKX_DEMO', fields: [['OKX_API_KEY', 'API key'], ['OKX_API_SECRET', 'Secret key'], ['OKX_PASSPHRASE', 'API passphrase']], tip: 'OKX: Profile, API. Give it Read and Trade only, never Withdraw. For testing, create the key under Demo trading.' },
+  kraken: { label: 'Kraken', cls: 'crypto', fields: [['KRAKEN_API_KEY', 'API key'], ['KRAKEN_API_SECRET', 'Private key']], tip: 'Permissions: query funds, query orders, create orders. Never withdraw.' },
+  coinbase: { label: 'Coinbase', cls: 'crypto', fields: [['COINBASE_API_KEY_NAME', 'Key name'], ['COINBASE_API_PRIVATE_KEY', 'Private key (PEM)']], tip: 'Advanced Trade key with View and Trade only.' },
+  'robinhood-crypto': { label: 'Robinhood Crypto', cls: 'crypto', fields: [['ROBINHOOD_API_KEY', 'API key'], ['ROBINHOOD_PRIVATE_KEY', 'Private key (base64)']], tip: 'Robinhood web classic: Settings, Crypto, API trading.' },
+  alpaca: { label: 'Alpaca', cls: 'stocks', fields: [['ALPACA_KEY_ID', 'Key ID'], ['ALPACA_SECRET_KEY', 'Secret key']], tip: 'Paper keys work for testing.' },
+  tradier: { label: 'Tradier', cls: 'stocks', fields: [['TRADIER_ACCESS_TOKEN', 'Access token'], ['TRADIER_ACCOUNT_ID', 'Account ID']], tip: 'Sandbox by default.' },
+  public: { label: 'Public', cls: 'stocks', fields: [['PUBLIC_API_SECRET', 'API secret'], ['PUBLIC_ACCOUNT_ID', 'Account ID']], tip: '' },
+};
+let keysSaved = null;
+let acctPick = 'okx';
+let acctResult = null; // survives the screen redraw that follows every action // names of secrets already stored, or null while unknown
+function accountsCard() {
+  const card = h('div', { class: 'card sect' }, h('h3', {}, 'Connect accounts'));
+  if (!GH()) return card.append(h('div', { class: 'hint' }, 'On a server, put the keys in its environment (see .env.example). Keys never go through this screen.')), card;
+  if (keysSaved === null) { GH().secretNames().then((n) => { keysSaved = n; render(); }).catch((e) => { keysSaved = []; card.append(h('div', { class: 'hint bad' }, e.message)); }); }
+  card.append(h('div', { class: 'hint' }, 'Keys are encrypted on this device and stored as GitHub Secrets. They are never shown again, and the runner is the only thing that reads them.'));
+  const pick = h('select', {}, Object.entries(KEY_FIELDS).map(([id, b]) => h('option', { value: id }, b.label + (keysSaved && b.fields.every(([n]) => keysSaved.includes(n)) ? '  ✓ saved' : ''))));
+  const box = h('div', {});
+  pick.value = acctPick;
+  const result = h('div', { class: 'hint' }, acctResult ? acctResult.map((c) => h('div', {}, h('span', { class: c.ok ? 'good' : 'bad' }, (c.ok ? '✓ ' : '✗ ') + c.name), ' ', h('span', { class: 'muted' }, c.detail))) : null);
+  const draw = () => {
+    const b = KEY_FIELDS[pick.value];
+    const inputs = b.fields.map(([name, label]) => {
+      const el = h('input', { type: 'password', autocomplete: 'off', placeholder: label, 'data-n': name });
+      const paste = h('button', { type: 'button', class: 'sec sm', onclick: async () => { try { el.value = (await navigator.clipboard.readText()).trim(); } catch { alert('Allow clipboard access, or paste into the box by hand.'); } } }, 'Paste');
+      return h('div', { class: 'row' }, el, paste);
+    });
+    const bulk = h('textarea', { rows: 3, placeholder: 'Or paste several lines like NAME=value', style: 'width:100%' });
+    bulk.addEventListener('input', () => { for (const line of bulk.value.split('\n')) { const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.+?)\s*$/); const t = m && inputs.map((r) => r.firstChild).find((i) => i.dataset.n === m[1]); if (t) t.value = m[2].replace(/^["']|["']$/g, ''); } });
+    const demoBox = b.demo ? h('input', { type: 'checkbox', checked: true }) : null;
+    box.replaceChildren(
+      b.tip ? h('div', { class: 'hint' }, b.tip) : null, ...inputs, bulk,
+      demoBox ? h('label', { class: 'switchrow', style: 'display:flex;gap:8px;align-items:center;margin:6px 0' }, demoBox, 'These are demo (practice) keys') : null,
+      h('button', { class: 'block', disabled: busy, onclick: () => act(async () => {
+        const values = {};
+        for (const r of inputs) { const i = r.firstChild; if (!i.value) throw new Error('Fill in ' + i.placeholder + '.'); values[i.dataset.n] = i.value; }
+        await GH().saveSecrets(values, b.demo ? { [b.demo]: demoBox.checked ? 'true' : 'false' } : {});
+        keysSaved = (keysSaved || []).concat(Object.keys(values));
+        const sel = b.cls === 'crypto' ? { cryptoBroker: pick.value } : { broker: pick.value };
+        await api('/api/settings', { method: 'POST', body: sel });
+        const r = await api('/api/broker/test', { method: 'POST', body: { assetClass: b.cls } });
+        acctResult = r.checks;
+      }) }, 'Save and test'));
+  };
+  pick.addEventListener('change', () => { acctPick = pick.value; acctResult = null; draw(); });
+  draw();
+  card.append(h('label', {}, 'Broker'), pick, box, result);
+  return card;
 }
 
 function twoFaCard() {

@@ -152,8 +152,32 @@
       token, el('div', { style: 'height:8px' }), pass, el('div', { style: 'height:10px' }), btn, err);
   }
 
+  // ---- broker keys -> GitHub Secrets (encrypted in the browser with the repo's public key; GitHub never shows them again)
+  async function secretNames() {
+    const r = await gh(`/repos/${CFG.repo}/actions/secrets?per_page=100`);
+    if (r.status === 403 || r.status === 404) throw new Error('The token needs the "Secrets: Read and write" permission to manage keys here.');
+    if (!r.ok) throw new Error(`GitHub ${r.status} listing secrets`);
+    return (await r.json()).secrets.map((x) => x.name);
+  }
+  async function saveSecrets(values, vars = {}) {
+    const kr = await gh(`/repos/${CFG.repo}/actions/secrets/public-key`);
+    if (!kr.ok) throw new Error('The token needs the "Secrets: Read and write" permission to save keys here.');
+    const { key, key_id: keyId } = await kr.json();
+    for (const [name, value] of Object.entries(values)) {
+      if (!/^[A-Z][A-Z0-9_]{1,60}$/.test(name)) throw new Error('bad name ' + name);
+      const r = await gh(`/repos/${CFG.repo}/actions/secrets/${name}`, { method: 'PUT', body: JSON.stringify({ encrypted_value: window.AITRADER_SEALBOX.sealedBox(key, value), key_id: keyId }) });
+      if (!r.ok) throw new Error(`GitHub ${r.status} saving ${name}`);
+    }
+    for (const [name, value] of Object.entries(vars)) { // plain settings like OKX_DEMO live in Variables
+      let r = await gh(`/repos/${CFG.repo}/actions/variables/${name}`, { method: 'PATCH', body: JSON.stringify({ name, value }) });
+      if (r.status === 404) r = await gh(`/repos/${CFG.repo}/actions/variables`, { method: 'POST', body: JSON.stringify({ name, value }) });
+      if (!r.ok) throw new Error(`GitHub ${r.status} saving ${name} (the token needs "Variables: Read and write")`);
+    }
+    return true;
+  }
+
   window.AITRADER_GITHUB = {
-    api, loginView,
+    api, loginView, secretNames, saveSecrets,
     hasSession: () => Boolean(session && session.token && session.passphrase),
     signOut() { session = null; keys = null; cached = { at: 0, view: null }; store.set(null); },
   };
