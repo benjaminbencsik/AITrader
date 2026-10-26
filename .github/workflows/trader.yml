@@ -3,6 +3,9 @@ name: Trader
 # Each run loads the encrypted state from the `data` branch, applies commands from your app, scans or checks exits if due,
 # and saves the new encrypted state. Your keys live in repo Settings -> Secrets and variables -> Actions -> Secrets.
 on:
+  push:
+    branches: [main]
+    paths: ['server/**', 'scripts/run-once.js', 'public/shared.js', '.github/workflows/trader.yml']
   schedule:
     - cron: '*/10 * * * *'
   workflow_dispatch:

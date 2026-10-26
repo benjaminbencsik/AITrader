@@ -3,6 +3,9 @@ name: Build Android APK
 # called "apk-latest", so you can open github.com/<you>/<repo>/releases on your phone and tap the file.
 # The APK holds the app screens only. No keys or data are inside it; you sign in with your GitHub token and passphrase.
 on:
+  push:
+    branches: [main]
+    paths: ['public/**', 'mobile/**', 'scripts/build-static.js', '.github/workflows/android.yml']
   workflow_dispatch:
 permissions:
   contents: write
