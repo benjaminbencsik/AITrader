@@ -1,0 +1,8 @@
+node_modules/
+data/
+.env
+dist/
+mobile/android/
+mobile/www/*
+!mobile/www/.gitkeep
+statebranch/

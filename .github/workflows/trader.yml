@@ -1,0 +1,76 @@
+name: Trader
+# The "server": GitHub runs this every 10 minutes (it can be late; GitHub does not promise exact timing).
+# Each run loads the encrypted state from the `data` branch, applies commands from your app, scans or checks exits if due,
+# and saves the new encrypted state. Your keys live in repo Settings -> Secrets and variables -> Actions -> Secrets.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      cmd: { description: 'signed phone command (leave empty when running by hand)', required: false, default: '' }
+      ts: { required: false, default: '' }
+      nonce: { required: false, default: '' }
+      sig: { required: false, default: '' }
+
+# Only one run at a time, so two passes never trade on the same state.
+concurrency:
+  group: trader
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+
+      - name: Get the encrypted state (data branch)
+        run: |
+          set -e
+          URL="https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          if git ls-remote --exit-code --heads "$URL" data >/dev/null 2>&1; then
+            git clone --quiet --branch data --single-branch "$URL" statebranch
+          else
+            mkdir statebranch && cd statebranch && git init --quiet -b data && git remote add origin "$URL"
+          fi
+
+      - name: Run one pass
+        env:
+          ALL_SECRETS: ${{ toJSON(secrets) }}
+          ALL_VARS: ${{ toJSON(vars) }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          CMD: ${{ github.event.inputs.cmd }}
+          CMD_TS: ${{ github.event.inputs.ts }}
+          CMD_NONCE: ${{ github.event.inputs.nonce }}
+          CMD_SIG: ${{ github.event.inputs.sig }}
+          STATE_PASSPHRASE: ${{ secrets.STATE_PASSPHRASE }}
+        run: node scripts/run-once.js statebranch
+
+      - name: Save the new encrypted state
+        run: |
+          set -e
+          cd statebranch
+          git config user.name "trader-bot"
+          git config user.email "trader-bot@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo "nothing changed"; exit 0; fi
+          git commit --quiet -m "state"
+          # Keep history small: after 200 commits, replace it with one fresh commit.
+          if [ "$(git rev-list --count HEAD)" -gt 200 ]; then
+            git checkout --quiet --orphan squashed
+            git commit --quiet -m "state (history squashed)"
+            git branch -M data
+            git push --quiet --force origin data
+            exit 0
+          fi
+          for i in 1 2 3; do
+            git push --quiet origin data && exit 0
+            git pull --quiet --rebase origin data || true
+          done
+          echo "could not save state" && exit 1

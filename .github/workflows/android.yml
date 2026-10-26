@@ -1,0 +1,39 @@
+name: Build Android APK
+# Builds an installable APK in GitHub's cloud (nothing to install on your computer) and attaches it to a public release
+# called "apk-latest", so you can open github.com/<you>/<repo>/releases on your phone and tap the file.
+# The APK holds the app screens only. No keys or data are inside it; you sign in with your GitHub token and passphrase.
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - name: Bundle the app screens into the APK
+        run: node scripts/build-static.js --out mobile/www
+      - run: npm install
+        working-directory: mobile
+      - run: npx cap add android
+        working-directory: mobile
+      - run: npx cap sync android
+        working-directory: mobile
+      - run: ./gradlew assembleDebug
+        working-directory: mobile/android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ai-trader-apk
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Publish to the apk-latest release
+        run: |
+          cp mobile/android/app/build/outputs/apk/debug/app-debug.apk ai-trader.apk
+          gh release view apk-latest >/dev/null 2>&1 || gh release create apk-latest --title "Android app (latest)" --notes "Debug build. Install it, then sign in with your GitHub token and passphrase."
+          gh release upload apk-latest ai-trader.apk --clobber
